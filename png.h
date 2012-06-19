@@ -13,7 +13,7 @@ inline unsigned char paeth_predictor(int a, int b, int c);
 //////////////////////////////////////////////////////////////////////////
 //png file Class
 class PngFile {
-  private:
+  protected:
     //png header info
     unsigned char bit;       // bit size
     unsigned char color;     // color type
