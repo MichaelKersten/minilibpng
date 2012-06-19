@@ -1,5 +1,6 @@
 #include "png.h"
-#include <iostream>
+#include <cstring>
+#include <cassert>
 
 //////////////////////////////////////////////////////////////////////////
 //Endian conversion
@@ -176,7 +177,6 @@ PngFile::PngFile(void *input_data, unsigned int input_length) {
 //destructor
 PngFile::~PngFile() {
   inflateEnd(&strm);
-
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -215,11 +215,7 @@ int PngFile::dec_line(unsigned char *line, unsigned int count) {
     if (ret) return 2;
 
     ret = inflate(&strm, Z_NO_FLUSH);
-    if (ret) {
-      if (ret == Z_DATA_ERROR || ret == Z_MEM_ERROR) return 1;
-
-      if (ret == Z_NEED_DICT) strm.avail_in = 0;
-    }
+    if (ret) return 1;
   }
   return 0;
 }

@@ -37,9 +37,6 @@ int main(int argc, char *argv[]) {
   scratch = new unsigned char[PNG->scratch_size];
 
   while ( 0 == PNG->read(&image[PNG->last_row*PNG->width*typ],(typ==4),scratch) );
-    //if (PNG->last_pass==7) break;
-
-
 
 
   dat_aus.open("test.tga", ios::out | ios::binary);
