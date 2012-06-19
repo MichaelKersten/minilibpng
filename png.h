@@ -24,6 +24,7 @@ class PngFile {
     unsigned int line_len;    //length of line
     unsigned char pixel_size; //size of pixel for filter algorithm
     unsigned int interlace_count;
+    int last_pass;            // number of the last pass (interlace format only)
 
     unsigned char *file;      //png file pointer
     unsigned char *file_ptr;  //temp. pointer
@@ -41,7 +42,6 @@ class PngFile {
     unsigned int length;      // real-length in bytes of the PNG file
     unsigned int scratch_size;// size of the scratch area in bytes
     unsigned int last_row;    // number of the last row delivered via read
-    int last_pass;            // number of the last pass (interlace format only
 
   //constructor
   PngFile(void *input_data, unsigned int input_length);
