@@ -52,8 +52,7 @@ class PngFile {
 
   unsigned int read_dword(bool be=true);
 
-  //read line interlaced
-  int read_interlaced(void *row, bool use_bgrx, void *scratch);
+  void reset();
 
   public:
   //read line
