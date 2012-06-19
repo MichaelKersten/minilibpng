@@ -46,8 +46,6 @@ PngFile::PngFile(void *input_data, unsigned int input_length) {
 
   bit = 0;
   color = 0;
-  comp = 0;
-  filter = 0;
   interlace = 0;
 
   line_len = 0;
@@ -77,8 +75,8 @@ PngFile::PngFile(void *input_data, unsigned int input_length) {
 
   bit = *file_ptr++;
   color = *file_ptr++;
-  comp = *file_ptr++;
-  filter = *file_ptr++;
+  if (0 != *file_ptr++) return; //check compression type
+  if (0 != *file_ptr++) return; //check filter type
   interlace = *file_ptr++;
 
   file_ptr += 4;

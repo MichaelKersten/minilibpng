@@ -17,8 +17,6 @@ class PngFile {
     //png header info
     unsigned char bit;       // bit size
     unsigned char color;     // color type
-    unsigned char comp;      // compression method
-    unsigned char filter;    // filter nethod
     unsigned char interlace; // interlacing on/off
 
     unsigned int line_len;    //length of line
