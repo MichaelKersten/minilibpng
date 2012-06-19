@@ -4,9 +4,6 @@
 
 #include <zlib.h>
 
-//Endian conversion
-inline void endian(unsigned int *val);
-
 //filter method 4 paeth predictor
 inline unsigned char paeth_predictor(int a, int b, int c);
 
@@ -52,6 +49,9 @@ class PngFile {
 
   //decompress line
   int dec_line(unsigned char *line, unsigned int count);
+
+  // read big endian dword
+  unsigned int read_dword();
 
   //read line interlaced
   int read_interlaced(void *row, bool use_bgrx, void *scratch);

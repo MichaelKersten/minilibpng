@@ -3,15 +3,6 @@
 #include <cassert>
 
 //////////////////////////////////////////////////////////////////////////
-//Endian conversion
-inline void endian(unsigned int *val) {
-  *val = (*val & 0xff000000) >> 24 |
-         (*val & 0x000000ff) << 24 |
-         (*val & 0x00ff0000) >> 8 |
-         (*val & 0x0000ff00) << 8;
-}
-
-//////////////////////////////////////////////////////////////////////////
 //filter method 4 paeth predictor
 inline unsigned char paeth_predictor(int a, int b, int c) {
     int p = a + b - c;
@@ -63,15 +54,19 @@ PngFile::PngFile(void *input_data, unsigned int input_length) {
 
   file = file_ptr = (unsigned char*) input_data;
 
+
+
   //png header
   if (strncmp((char*) file_ptr,"\x89PNG\x0d\x0a\x1a\x0a",8)) return;
-  file_ptr += 12;
+  file_ptr += 8;
+
+  block_size = read_dword();
+  if (block_size<13) return;
+
   if (strncmp((char*) file_ptr,"IHDR",4)) return;
   file_ptr+=4;
-  width = *(unsigned int*) file_ptr; file_ptr+=4;
-  endian(&width);
-  height = *(unsigned int*) file_ptr; file_ptr+=4;
-  endian(&height);
+  width = read_dword();
+  height = read_dword();
 
   bit = *file_ptr++;
   color = *file_ptr++;
@@ -122,8 +117,7 @@ PngFile::PngFile(void *input_data, unsigned int input_length) {
   length = input_length;
 
   while ((unsigned int) (file_ptr-file) < length) {
-    block_size = *(unsigned int*) file_ptr; file_ptr += 4;
-    endian(&block_size);
+    block_size = read_dword();
 
     if (0 == strncmp((char*) file_ptr,"IEND",4)) break;
 
@@ -178,13 +172,23 @@ PngFile::~PngFile() {
 }
 
 //////////////////////////////////////////////////////////////////////////
+// read big endian dword
+unsigned int PngFile::read_dword() {
+  unsigned int val = *(unsigned int*) file_ptr;
+  file_ptr += 4;
+  return (val & 0xff000000) >> 24 |
+         (val & 0x00ff0000) >> 8  |
+         (val & 0x0000ff00) << 8  |
+         (val & 0x000000ff) << 24;
+}
+
+//////////////////////////////////////////////////////////////////////////
 //get next IDAT block
 int PngFile::next_block() {
   unsigned int block_size = 0;
 
   while ((unsigned int) (file_ptr-file) < length) {
-    block_size = *(unsigned int*) file_ptr; file_ptr += 4;
-    endian(&block_size);
+    block_size = read_dword();
 
     if (0 == strncmp((char*) file_ptr,"IEND",4)) return 1;
     if (0 == strncmp((char*) file_ptr,"IDAT",4)) {
