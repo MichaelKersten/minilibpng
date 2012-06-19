@@ -50,8 +50,7 @@ class PngFile {
   //decompress line
   int dec_line(unsigned char *line, unsigned int count);
 
-  // read big endian dword
-  unsigned int read_dword();
+  unsigned int read_dword(bool be=true);
 
   //read line interlaced
   int read_interlaced(void *row, bool use_bgrx, void *scratch);

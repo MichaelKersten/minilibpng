@@ -54,115 +54,97 @@ PngFile::PngFile(void *input_data, unsigned int input_length) {
 
   file = file_ptr = (unsigned char*) input_data;
 
-
+  if (input_length < 20) return;
 
   //png header
-  if (strncmp((char*) file_ptr,"\x89PNG\x0d\x0a\x1a\x0a",8)) return;
-  file_ptr += 8;
+  if (read_dword(0) != *(unsigned int*) "\x89PNG") return;
+  if (read_dword(0) != *(unsigned int*) "\x0d\x0a\x1a\x0a") return;
 
   block_size = read_dword();
-  if (block_size<13) return;
+  if (block_size<13 || input_length-20 < block_size) return;
 
-  if (strncmp((char*) file_ptr,"IHDR",4)) return;
-  file_ptr+=4;
+  if (read_dword(0) != *(unsigned int*) "IHDR") return;
   width = read_dword();
   height = read_dword();
 
   bit = *file_ptr++;
+  if (bit>16) return;
   color = *file_ptr++;
   if (0 != *file_ptr++) return; //check compression type
   if (0 != *file_ptr++) return; //check filter type
   interlace = *file_ptr++;
 
-  file_ptr += 4;
+  read_dword(); // skip checksum
 
-  switch(color) {
-    case 0: //gray scale
-    case 3: //palette
-      line_len = (width*bit % 8) ? width*bit/8 +2 : width*bit/8 +1;
-      if (bit==16) pixel_size = 2;
-      else pixel_size = 1;
+  unsigned char pixel_sizes[] = { 1,0,3,1,2,0,4 };
 
-      //initialize palette with gray scale
-      switch (bit) {
-        case 1: pal_number = 2; break;
-        case 2: pal_number = 4; break;
-        case 4: pal_number = 16; break;
-        case 8: pal_number = 256; break;
-      }
-      for (int i=0;i<pal_number;i++) {
-        unsigned char temp = 255*i/(pal_number-1);
-        pal[i] = 0xff000000 | temp<<16 | temp<<8 | temp;
-      }
+  if (color >= sizeof(pixel_sizes) || pixel_sizes[color] == 0) return;
+  pixel_size = pixel_sizes[color];
+  if (bit == 16) pixel_size *= 2;
 
-    break;
-    case 2: //true color
-      if (bit==16) pixel_size = 6;
-      else pixel_size = 3;
-      line_len = width*pixel_size+1;
-    break;
-    case 4: //gray scale with alpha
-      if (bit==16) pixel_size = 4;
-      else pixel_size = 2;
-      line_len = width*pixel_size+1;
-    break;
-    case 6: //true color width alpha
-      if (bit==16) pixel_size = 8;
-      else pixel_size = 4;
-      line_len = width*pixel_size+1;
-    break;
+  if (color != 3)
+    line_len = width*pixel_size+1;
+  else {
+    if (bit>8) return;
+    line_len = (width*bit % 8) ? width*bit/8 +2 : width*bit/8 +1;
+    pal_number = 1 << bit;
+
+    //initialize palette with gray scale
+    for (int i=0;i<pal_number;i++) {
+      unsigned char temp = 255*i/(pal_number-1);
+      pal[i] = temp<<16 | temp<<8 | temp;
+    }
   }
 
   scratch_size = line_len * 2;
-  length = input_length;
 
-  while ((unsigned int) (file_ptr-file) < length) {
+  while ((unsigned int) (file_ptr-file)+12 <= input_length) {
     block_size = read_dword();
+    if (block_size > input_length-((file_ptr-file)+8) ) return;
+    unsigned chunk = read_dword(0);
 
-    if (0 == strncmp((char*) file_ptr,"IEND",4)) break;
+    if (chunk == *(unsigned int*) "IEND") {
+      if (block_size) return;
+      read_dword();
+      length = (unsigned int) (file_ptr-file);
+      file_ptr = file + 8;
+      return;
+    }
 
     //palette
-    if (0 == strncmp((char*) file_ptr,"PLTE",4)) {
-      file_ptr += 4;
+    else if (chunk == *(unsigned int*) "PLTE") {
+      if (block_size!=pal_number*3) return;
 
       for (int i=0;i<pal_number;i++)
         pal[i] = file_ptr[i*3]<<16 | file_ptr[i*3+1]<<8 | file_ptr[i*3+2];
 
-      file_ptr += block_size+4;
-      continue;
     }
 
     //background color
-    if (0 == strncmp((char*) file_ptr,"bKGD",4)) {
-      file_ptr += 4;
-
+    else if (chunk == *(unsigned int*) "bKGD") {
+      unsigned int req_bytes[] = {2,0,6,1,2,0,6};
+      if (block_size!=req_bytes[color]) return;
+      unsigned char *p = file_ptr;
+      if (bit != 16) p++;
       switch (color) {
         case 0:
         case 4:
-          if (bit == 16)
-            background = file_ptr[0]<<16 | file_ptr[0]<<8 | file_ptr[0];
-          else
-            background = file_ptr[1]<<16 | file_ptr[1]<<8 | file_ptr[1];
-
+            background = *p * 0x010101;
         break;
         case 2:
         case 6:
-          if (bit == 16)
-            background = file_ptr[0]<<16 | file_ptr[2]<<8 | file_ptr[4];
-          else
-            background = file_ptr[1]<<16 | file_ptr[3]<<8 | file_ptr[5];
+            background = p[0]<<16 | p[2]<<8 | p[4];
         break;
         case 3:
-          background = pal[file_ptr[0]];
+          background = pal[*(p-1)];
         break;
       }
-      file_ptr += block_size+4;
-      continue;
     }
-    file_ptr += block_size+8;
+
+    file_ptr += block_size;
+    read_dword();
   }
 
-  file_ptr = file + 8;
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -172,14 +154,14 @@ PngFile::~PngFile() {
 }
 
 //////////////////////////////////////////////////////////////////////////
-// read big endian dword
-unsigned int PngFile::read_dword() {
+unsigned int PngFile::read_dword(bool be) {
   unsigned int val = *(unsigned int*) file_ptr;
   file_ptr += 4;
-  return (val & 0xff000000) >> 24 |
-         (val & 0x00ff0000) >> 8  |
-         (val & 0x0000ff00) << 8  |
-         (val & 0x000000ff) << 24;
+  if (be) return (val & 0xff000000) >> 24 |
+                 (val & 0x00ff0000) >> 8  |
+                 (val & 0x0000ff00) << 8  |
+                 (val & 0x000000ff) << 24;
+  return val;
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -189,17 +171,18 @@ int PngFile::next_block() {
 
   while ((unsigned int) (file_ptr-file) < length) {
     block_size = read_dword();
+    unsigned int chunk = read_dword(0);
 
-    if (0 == strncmp((char*) file_ptr,"IEND",4)) return 1;
-    if (0 == strncmp((char*) file_ptr,"IDAT",4)) {
-      file_ptr+=4;
+    if (chunk == *(unsigned int*) "IEND") return 1;
+    if (chunk == *(unsigned int*) "IDAT") {
       strm.avail_in = block_size;
       strm.next_in = file_ptr;
-      file_ptr += block_size+4;
+      file_ptr += block_size;
+      read_dword();
       break;
     }
     else
-     file_ptr += block_size+8;
+     file_ptr += block_size+4;
   }
   if ((unsigned int) (file_ptr-file) >= length) return 1;
   return 0;
