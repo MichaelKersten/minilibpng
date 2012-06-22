@@ -82,12 +82,10 @@ PngFile::PngFile(void *input_data, unsigned int input_length) {
   pixel_size = pixel_sizes[color];
   if (bit == 16) pixel_size *= 2;
 
-  if (color != 3)
-    line_len = width*pixel_size+1;
-  else {
-    if (bit>8) return;
+  if (color == 3 || color == 0) {
+    if (bit>8&&color==3) return;
     line_len = (width*bit % 8) ? width*bit/8 +2 : width*bit/8 +1;
-    pal_number = 1 << bit;
+    if (bit <= 8) pal_number = 1 << bit;
 
     //initialize palette with gray scale
     for (int i=0;i<pal_number;i++) {
@@ -95,6 +93,9 @@ PngFile::PngFile(void *input_data, unsigned int input_length) {
       pal[i] = temp<<16 | temp<<8 | temp;
     }
   }
+  else
+    line_len = width*pixel_size+1;
+
 
   scratch_size = line_len * 2;
 
@@ -113,9 +114,10 @@ PngFile::PngFile(void *input_data, unsigned int input_length) {
 
     //palette
     else if (chunk == *(unsigned int*) "PLTE") {
-      if (block_size!=pal_number*3) return;
+      if (block_size>(unsigned) (pal_number*3)) return;
+      if (block_size % 3) return;
 
-      for (int i=0;i<pal_number;i++)
+      for (int i=0;i<(int) (block_size/3);i++)
         pal[i] = file_ptr[i*3]<<16 | file_ptr[i*3+1]<<8 | file_ptr[i*3+2];
 
     }
@@ -144,7 +146,6 @@ PngFile::PngFile(void *input_data, unsigned int input_length) {
     file_ptr += block_size;
     read_dword();
   }
-
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -305,10 +306,13 @@ int PngFile::read(void *row, bool use_bgrx, void *scratch) {
         for (unsigned int i=0;i<width2;i+=jump) {
           unsigned char temp = *line2++;
           for (int j=(jump-1);j>=0;j--) {
-            for (int k=2;k>=0;k--)
-              row_ptr[k] = (pal[(temp>>(j*bit))&and]>>(k*8)) & 0xff;
-            if (use_bgrx) row_ptr[3] = 0xff;
-            row_ptr += ((interlace) ? col_increment[last_pass] : 1) * ((use_bgrx) ? 4 : 3);
+            if ((jump-1-j+i)<width2) {
+              for (int k=2;k>=0;k--)
+                row_ptr[k] = (pal[(temp>>(j*bit))&and] >> (k*8)) & 0xff;
+              if (use_bgrx) row_ptr[3] = 0xff;
+
+              row_ptr += ((interlace) ? col_increment[last_pass] : 1) * ((use_bgrx) ? 4 : 3);
+            }
           }
         }
       }
@@ -359,7 +363,6 @@ int PngFile::read(void *row, bool use_bgrx, void *scratch) {
   }
 
 
-
   last_row += ((interlace) ? row_increment[last_pass] : 1);
   interlace_count++;
 
@@ -385,4 +388,3 @@ int PngFile::read(void *row, bool use_bgrx, void *scratch) {
 
   return 0;
 }
-
