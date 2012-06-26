@@ -13,20 +13,20 @@ inline unsigned char paeth_predictor(int a, int b, int c);
 class PngFile {
   protected:
     //png header info
-    unsigned char bit;       // bit size
-    unsigned char color;     // color type
-    unsigned char interlace; // interlacing on/off
+    unsigned char bit;            // bit size
+    unsigned char color;          // color type
+    unsigned char interlace;      // interlacing on/off
 
-    unsigned char channel; //number of channels in a single pixel
+    unsigned char channel;        //number of channels in a single pixel
     unsigned int interlace_count;
-    int last_pass;            // number of the last pass (interlace format only)
+    int last_pass;                // number of the last pass
 
-    unsigned char *file;      //png file pointer
-    unsigned char *file_ptr;  //temp. pointer
+    unsigned char *file;          //png file pointer
+    unsigned char *file_ptr;      //temp. pointer
 
-    z_stream strm;            //zlib stream
+    z_stream strm;                //zlib stream
 
-    unsigned char pal[256][3];//palette
+    unsigned char pal[256][3];    //palette
 
   public:
     unsigned int width;

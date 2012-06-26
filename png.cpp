@@ -30,25 +30,7 @@ inline unsigned char paeth_predictor(int a, int b, int c) {
 
 //////////////////////////////////////////////////////////////////////////
 //constructor
-PngFile::PngFile(void *input_data, unsigned int input_length) {
-  unsigned int block_size = 0;
-
-  width = 0;
-  height = 0;
-  background = 0;
-  length = 0;
-  scratch_size = 0;
-
-  bit = 0;
-  color = 0;
-  interlace = 0;
-
-  strm.zalloc = Z_NULL;
-  strm.zfree = Z_NULL;
-  strm.opaque = Z_NULL;
-  strm.avail_in = 0;
-  strm.next_in = Z_NULL;
-
+PngFile::PngFile(void *input_data, unsigned int input_length) : length(0) {
   file = file_ptr = (unsigned char*) input_data;
 
   if (input_length < 20) return;
@@ -57,7 +39,7 @@ PngFile::PngFile(void *input_data, unsigned int input_length) {
   if (read_dword(0) != *(unsigned int*) "\x89PNG") return;
   if (read_dword(0) != *(unsigned int*) "\x0d\x0a\x1a\x0a") return;
 
-  block_size = read_dword();
+  unsigned int block_size = read_dword();
   if (block_size<13 || input_length-20 < block_size) return;
 
   if (read_dword(0) != *(unsigned int*) "IHDR") return;
@@ -69,6 +51,7 @@ PngFile::PngFile(void *input_data, unsigned int input_length) {
   if (0 != *file_ptr++) return; //check compression type
   if (0 != *file_ptr++) return; //check filter type
   interlace = *file_ptr++;
+  if (interlace>=2) return;
 
   read_dword(); // skip checksum
 
@@ -194,6 +177,13 @@ void PngFile::reset() {
   last_row = 0;
   last_pass = interlace ? 0 : 7;
   interlace_count = 0;
+
+  strm.zalloc = Z_NULL;
+  strm.zfree = Z_NULL;
+  strm.opaque = Z_NULL;
+  strm.avail_in = 0;
+  strm.next_in = Z_NULL;
+
   inflateInit(&strm);
 }
 
