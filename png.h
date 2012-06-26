@@ -17,8 +17,7 @@ class PngFile {
     unsigned char color;     // color type
     unsigned char interlace; // interlacing on/off
 
-    unsigned int line_len;    //length of line
-    unsigned char pixel_size; //size of pixel for filter algorithm
+    unsigned char channel; //number of channels in a single pixel
     unsigned int interlace_count;
     int last_pass;            // number of the last pass (interlace format only)
 

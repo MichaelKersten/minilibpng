@@ -38,24 +38,16 @@ PngFile::PngFile(void *input_data, unsigned int input_length) {
   background = 0;
   length = 0;
   scratch_size = 0;
-  last_row = 0;
-  last_pass = 0;
 
   bit = 0;
   color = 0;
   interlace = 0;
-
-  line_len = 0;
-  pixel_size = 0;
-
-  interlace_count = 0;
 
   strm.zalloc = Z_NULL;
   strm.zfree = Z_NULL;
   strm.opaque = Z_NULL;
   strm.avail_in = 0;
   strm.next_in = Z_NULL;
-  inflateInit(&strm);
 
   file = file_ptr = (unsigned char*) input_data;
 
@@ -81,22 +73,14 @@ PngFile::PngFile(void *input_data, unsigned int input_length) {
 
   read_dword(); // skip checksum
 
-  unsigned char pixel_sizes[] = { 1,0,3,1,2,0,4 };
+  unsigned char channels[] = { 1,0,3,1,2,0,4 };
 
-  if (color >= sizeof(pixel_sizes) || pixel_sizes[color] == 0) return;
-  pixel_size = pixel_sizes[color];
-  if (bit == 16) pixel_size *= 2;
+  if (color >= sizeof(channels) || channels[color] == 0) return;
+  channel = channels[color];
+  scratch_size = ((channel*width*bit+7)/8 + 1) * 2;
 
-  if (color == 3 || color == 0) {
-    if (bit>8&&color==3) return;
-    line_len = (width*bit % 8) ? width*bit/8 +2 : width*bit/8 +1;
-
-  }
-  else
-    line_len = width*pixel_size+1;
-
-
-  scratch_size = line_len * 2;
+  // XXX test other invalid combinations
+  if (bit>8&&color==3) return;
 
   while ((unsigned int) (file_ptr-file)+12 <= input_length) {
     block_size = read_dword();
@@ -107,7 +91,7 @@ PngFile::PngFile(void *input_data, unsigned int input_length) {
       if (block_size) return;
       read_dword();
       length = (unsigned int) (file_ptr-file);
-      file_ptr = file + 8;
+      reset();
       return;
     }
 
@@ -208,7 +192,7 @@ int PngFile::dec_line(unsigned char *line, unsigned int count) {
 void PngFile::reset() {
   file_ptr = file+8;
   last_row = 0;
-  last_pass = 0;
+  last_pass = interlace ? 0 : 7;
   interlace_count = 0;
   inflateInit(&strm);
 }
@@ -219,161 +203,109 @@ void PngFile::reset() {
 // -1 last row reached
 // 1 zlib compression error
 // 2 unexpected end of file
+// 3 unknown filter type
 int PngFile::read(void *row, bool use_bgrx, void *scratch) {
   unsigned char *line1 = (unsigned char*) scratch;
   unsigned char *line2 = (unsigned char*) scratch;
   if (interlace_count % 2)
-    line1 += line_len;
+    line1 += scratch_size/2;
   else
-    line2 += line_len;
+    line2 += scratch_size/2;
 
   unsigned char *row_ptr = (unsigned char*) row;
-  int ret = 0;
-  int type;
 
-  unsigned int line_len2 = 0;
+  int starting_row[]  = { 0, 0, 4, 0, 2, 0, 1, 0, 0 };
+  int starting_col[]  = { 0, 4, 0, 2, 0, 1, 0, 0, 0 };
+  int row_increment[] = { 8, 8, 8, 4, 4, 2, 2, 1, 0 };
+  int col_increment[] = { 8, 8, 4, 4, 2, 2, 1, 1, 0 };
 
-
-  int starting_row[8]  = { 0, 0, 4, 0, 2, 0, 1, 0 };
-  int starting_col[8]  = { 0, 4, 0, 2, 0, 1, 0, 0 };
-  int row_increment[8] = { 8, 8, 8, 4, 4, 2, 2, 0 };
-  int col_increment[8] = { 8, 8, 4, 4, 2, 2, 1, 0 };
-
-  unsigned int width2;
-
-  if (interlace) {
-    width2 = ((width-starting_col[last_pass])%col_increment[last_pass])
-            ? (width-starting_col[last_pass])/col_increment[last_pass] +1
-            : (width-starting_col[last_pass])/col_increment[last_pass];
-    if(bit < 8)
-      line_len2 = (width2*bit % 8) ? width2*bit/8 +2 : width2*bit/8 +1;
-    else
-      line_len2 = width2*pixel_size+1;
-
-  }
-  else {
-    width2 = width;
-    line_len2 = line_len;
-  }
+  unsigned int width2 = (width-starting_col[last_pass] + col_increment[last_pass] - 1 )/col_increment[last_pass];
+  unsigned int line_len = (channel*width2*bit+7)/8 + 1;
 
   if (interlace_count == 0)
-    memset(line1,0,line_len2);
+    memset(line1,0,line_len);
 
   //decompression
-  ret = dec_line(line2,line_len2);
+  int ret = dec_line(line2,line_len);
   if (ret) return ret;
 
   //defilter
-  type = line2[0];
-  for (unsigned int x=1;x<line_len2;x++) {
-    int a = (x<(unsigned int) pixel_size+1) ? 0 : line2[x-pixel_size];
+  if (line2[0]>=5) return 3;
+  int pixel_size = bit > 8 ? channel * 2 : channel;
+  for (unsigned int x=1;x<line_len;x++) {
+    int a = (x<pixel_size+1u) ? 0 : line2[x-pixel_size];
     int b = line1[x];
-    int c = (x<(unsigned int) pixel_size+1) ? 0 : line1[x-pixel_size];
-    switch (type) {
+    int c = (x<pixel_size+1u) ? 0 : line1[x-pixel_size];
+    switch (line2[0]) {
       case 1: line2[x] += a; break;
       case 2: line2[x] += b; break;
       case 3: line2[x] += (a + b) / 2; break;
       case 4: line2[x] += paeth_predictor(a,b,c); break;
     }
   }
-
   line2++;
-  if (interlace) row_ptr += starting_col[last_pass]* ((use_bgrx) ? 4 : 3);
+  row_ptr += starting_col[last_pass] * ((use_bgrx) ? 4 : 3);
+  unsigned char alpha = 0xff;
 
   //write row
-  switch (color) {
-    case 0:
-      for (unsigned int i=0;i<width2;i++) {
-        unsigned char val = get_value(line2, i, bit);
+  for (unsigned int i=0;i<width2;i++) {
+    unsigned char val;
+    switch (color) {
+      case 0: //grayscale
+        val = get_value(line2, i, bit);
         if (bit < 8)
-            val *= 255/((1 << bit) -1);
+           val *= 255/((1 << bit) -1);
         for (int j=0;j<3;j++)
           row_ptr[j] = val;
+      break;
 
-        if (use_bgrx) row_ptr[3] = 0xff;
+      case 2: //truecolor
+        for (int j=0;j<3;j++)
+          row_ptr[j] = line2[bit/8*(i*3 + 2-j)];
+      break;
 
-        row_ptr += ((interlace) ? col_increment[last_pass] : 1) * ((use_bgrx) ? 4 : 3);
-      }
-    break;
-
-    case 2:
-      for (unsigned int i=0;i<width2;i++) {
-        for (int j=2;j>=0;j--) {
-          row_ptr[j] = *line2++;
-          if (bit==16) line2++;
-        }
-        if (use_bgrx) row_ptr[3] = 0xff;
-
-        row_ptr += ((interlace) ? col_increment[last_pass] : 1) * ((use_bgrx) ? 4 : 3);
-      }
-    break;
-
-    case 3:
-      for (unsigned int i=0;i<width2;i++) {
-        unsigned char val = get_value(line2, i, bit);
+      case 3: //palette
+        val = get_value(line2, i, bit);
 
         for (int j=0;j<3;j++)
           row_ptr[j] = pal[val][2-j];
 
-        if (use_bgrx) row_ptr[3] = 0xff;
+      break;
 
-        row_ptr += ((interlace) ? col_increment[last_pass] : 1) * ((use_bgrx) ? 4 : 3);
-      }
-
-    break;
-
-    case 4:
-      for (unsigned int i=0;i<width2;i++) {
+      case 4: //grayscale + alpha
         for (int j=0;j<3;j++)
-          row_ptr[j] = *line2;
-        line2 += ((bit==16) ? 2 : 1);
+          row_ptr[j] = line2[i*bit/8*2];
 
-        if (use_bgrx) row_ptr[3] = *line2;
-        line2 += ((bit==16) ? 2 : 1);
+        alpha = line2[bit/8*(i*2+1)];
+      break;
 
-        row_ptr += ((interlace) ? col_increment[last_pass] : 1) * ((use_bgrx) ? 4 : 3);
-      }
-    break;
+      case 6: //truecolor + alpha
+        for (int j=0;j<3;j++)
+          row_ptr[j] = line2[bit/8*(i*4 + 2-j)];
 
-    case 6:
-      for (unsigned int i=0;i<width2;i++) {
-        for (int j=2;j>=0;j--) {
-          row_ptr[j] = *line2++;
-          if (bit==16) line2++;
-        }
-        if (use_bgrx) {
-          row_ptr[3] = *line2;
-        }
-        line2 += ((bit==16) ? 2 : 1);
-
-        row_ptr += ((interlace) ? col_increment[last_pass] : 1) * ((use_bgrx) ? 4 : 3);
-      }
-    break;
+        alpha = line2[bit/8*(i*4+3)];
+      break;
+    }
+    if (use_bgrx) row_ptr[3] = alpha;
+    row_ptr += col_increment[last_pass] * ((use_bgrx) ? 4 : 3);
   }
 
 
-  last_row += ((interlace) ? row_increment[last_pass] : 1);
+  last_row += row_increment[last_pass];
   interlace_count++;
 
-  if (interlace) {
-    if (last_row >= height) {
-      last_pass++;
-      interlace_count = 0;
-      last_row = starting_row[last_pass];
-    }
+
+
+  if (last_row >= height) {
+    last_pass++;
+    interlace_count = 0;
+    last_row = starting_row[last_pass];
+
     if (last_pass >= 7) {
       reset();
       return -1;
     }
   }
-  else {
-    if (last_row >= height) {
-      reset();
-      return -1;
-    }
-  }
-
-
 
   return 0;
 }
