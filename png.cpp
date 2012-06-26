@@ -65,7 +65,6 @@ PngFile::PngFile(void *input_data, unsigned int input_length) {
   height = read_dword();
 
   bit = *file_ptr++;
-  if (bit>16) return;
   color = *file_ptr++;
   if (0 != *file_ptr++) return; //check compression type
   if (0 != *file_ptr++) return; //check filter type
@@ -73,21 +72,15 @@ PngFile::PngFile(void *input_data, unsigned int input_length) {
 
   read_dword(); // skip checksum
 
-
-  // XXX test other invalid combinations
-  if (color==2||color==4||color==6)
-    if (bit<8) return;
-  if (color==3&&bit>8) return;
-
-
   unsigned char channels[] = { 1,0,3,1,2,0,4 };
-
   if (color >= sizeof(channels) || channels[color] == 0) return;
   channel = channels[color];
+
+  unsigned int valid_bits[] = {0x10116, 0, 0x10100, 0x116, 0x10100, 0, 0x10100};
+  if (bit>16 || ~valid_bits[color] & (1<<bit)) return;
+
+
   scratch_size = ((channel*width*bit+7)/8 + 1) * 2;
-
-
-
 
   while ((unsigned int) (file_ptr-file)+12 <= input_length) {
     block_size = read_dword();
