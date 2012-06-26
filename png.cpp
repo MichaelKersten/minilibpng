@@ -2,6 +2,12 @@
 #include <cstring>
 #include <cassert>
 
+unsigned char get_value(unsigned char *line, unsigned int i, unsigned char bit) {
+  int mask = (1 << bit) -1;
+
+  return (line[i*bit/8] >> ((16-bit-((i*bit) %8)) %8)) & mask;
+}
+
 //////////////////////////////////////////////////////////////////////////
 //filter method 4 paeth predictor
 inline unsigned char paeth_predictor(int a, int b, int c) {
@@ -42,7 +48,6 @@ PngFile::PngFile(void *input_data, unsigned int input_length) {
   line_len = 0;
   pixel_size = 0;
 
-  pal_number = 0;
   interlace_count = 0;
 
   strm.zalloc = Z_NULL;
@@ -85,13 +90,7 @@ PngFile::PngFile(void *input_data, unsigned int input_length) {
   if (color == 3 || color == 0) {
     if (bit>8&&color==3) return;
     line_len = (width*bit % 8) ? width*bit/8 +2 : width*bit/8 +1;
-    if (bit <= 8) pal_number = 1 << bit;
 
-    //initialize palette with gray scale
-    for (int i=0;i<pal_number;i++) {
-      unsigned char temp = 255*i/(pal_number-1);
-      pal[i] = temp<<16 | temp<<8 | temp;
-    }
   }
   else
     line_len = width*pixel_size+1;
@@ -114,12 +113,9 @@ PngFile::PngFile(void *input_data, unsigned int input_length) {
 
     //palette
     else if (chunk == *(unsigned int*) "PLTE") {
-      if (block_size>(unsigned) (pal_number*3)) return;
       if (block_size % 3) return;
 
-      for (int i=0;i<(int) (block_size/3);i++)
-        pal[i] = file_ptr[i*3]<<16 | file_ptr[i*3+1]<<8 | file_ptr[i*3+2];
-
+      memcpy(pal,file_ptr,(block_size>768) ? 768 : block_size);
     }
 
     //background color
@@ -138,7 +134,7 @@ PngFile::PngFile(void *input_data, unsigned int input_length) {
             background = p[0]<<16 | p[2]<<8 | p[4];
         break;
         case 3:
-          background = pal[*(p-1)];
+          background = pal[*(p-1)][0] << 16 | pal[*(p-1)][1] << 8 | pal[*(p-1)][2];
         break;
       }
     }
@@ -233,7 +229,7 @@ int PngFile::read(void *row, bool use_bgrx, void *scratch) {
 
   unsigned char *row_ptr = (unsigned char*) row;
   int ret = 0;
-  int type, jump, and;
+  int type;
 
   unsigned int line_len2 = 0;
 
@@ -287,38 +283,18 @@ int PngFile::read(void *row, bool use_bgrx, void *scratch) {
   //write row
   switch (color) {
     case 0:
-    case 3:
-      if (bit == 16) {
-        for (unsigned int i=0;i<width2;i++) {
-          for (int j=0;j<3;j++)
-            row_ptr[j] = *line2;
+      for (unsigned int i=0;i<width2;i++) {
+        unsigned char val = get_value(line2, i, bit);
+        if (bit < 8)
+            val *= 255/((1 << bit) -1);
+        for (int j=0;j<3;j++)
+          row_ptr[j] = val;
 
-          if (use_bgrx) row_ptr[3] = 0xff;
-          line2+=2;
+        if (use_bgrx) row_ptr[3] = 0xff;
 
-          row_ptr += ((interlace) ? col_increment[last_pass] : 1) * ((use_bgrx) ? 4 : 3);
-        }
-      }
-      else {
-        jump = 8 / bit;
-        and = (1 << bit) -1;
-
-        for (unsigned int i=0;i<width2;i+=jump) {
-          unsigned char temp = *line2++;
-          for (int j=(jump-1);j>=0;j--) {
-            if ((jump-1-j+i)<width2) {
-              for (int k=2;k>=0;k--)
-                row_ptr[k] = (pal[(temp>>(j*bit))&and] >> (k*8)) & 0xff;
-              if (use_bgrx) row_ptr[3] = 0xff;
-
-              row_ptr += ((interlace) ? col_increment[last_pass] : 1) * ((use_bgrx) ? 4 : 3);
-            }
-          }
-        }
+        row_ptr += ((interlace) ? col_increment[last_pass] : 1) * ((use_bgrx) ? 4 : 3);
       }
     break;
-
-
 
     case 2:
       for (unsigned int i=0;i<width2;i++) {
@@ -332,6 +308,19 @@ int PngFile::read(void *row, bool use_bgrx, void *scratch) {
       }
     break;
 
+    case 3:
+      for (unsigned int i=0;i<width2;i++) {
+        unsigned char val = get_value(line2, i, bit);
+
+        for (int j=0;j<3;j++)
+          row_ptr[j] = pal[val][2-j];
+
+        if (use_bgrx) row_ptr[3] = 0xff;
+
+        row_ptr += ((interlace) ? col_increment[last_pass] : 1) * ((use_bgrx) ? 4 : 3);
+      }
+
+    break;
 
     case 4:
       for (unsigned int i=0;i<width2;i++) {

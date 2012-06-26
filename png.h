@@ -7,6 +7,7 @@
 //filter method 4 paeth predictor
 inline unsigned char paeth_predictor(int a, int b, int c);
 
+
 //////////////////////////////////////////////////////////////////////////
 //png file Class
 class PngFile {
@@ -26,9 +27,7 @@ class PngFile {
 
     z_stream strm;            //zlib stream
 
-
-    unsigned int pal[256];    //palette
-    int pal_number;           //number of palette entries
+    unsigned char pal[256][3];//palette
 
   public:
     unsigned int width;
