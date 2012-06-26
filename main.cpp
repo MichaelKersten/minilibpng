@@ -79,7 +79,6 @@ int main(int argc, char *argv[]) {
   data = new unsigned char[complete_size];
   data_ptr = data;
 
-
   cout << "Read Files.\n===========\n";
 
   for (int i=0;i<30;i++) {
@@ -110,7 +109,6 @@ int main(int argc, char *argv[]) {
     else cout << "bad file!!\n";
     data_ptr+=files[i].size;
   }
-
 
   cout << "\nRead image data and write TGA files.\n====================================\n";
 

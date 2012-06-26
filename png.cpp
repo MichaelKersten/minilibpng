@@ -73,14 +73,21 @@ PngFile::PngFile(void *input_data, unsigned int input_length) {
 
   read_dword(); // skip checksum
 
+
+  // XXX test other invalid combinations
+  if (color==2||color==4||color==6)
+    if (bit<8) return;
+  if (color==3&&bit>8) return;
+
+
   unsigned char channels[] = { 1,0,3,1,2,0,4 };
 
   if (color >= sizeof(channels) || channels[color] == 0) return;
   channel = channels[color];
   scratch_size = ((channel*width*bit+7)/8 + 1) * 2;
 
-  // XXX test other invalid combinations
-  if (bit>8&&color==3) return;
+
+
 
   while ((unsigned int) (file_ptr-file)+12 <= input_length) {
     block_size = read_dword();
@@ -232,17 +239,20 @@ int PngFile::read(void *row, bool use_bgrx, void *scratch) {
   //defilter
   if (line2[0]>=5) return 3;
   int pixel_size = bit > 8 ? channel * 2 : channel;
-  for (unsigned int x=1;x<line_len;x++) {
-    int a = (x<pixel_size+1u) ? 0 : line2[x-pixel_size];
-    int b = line1[x];
-    int c = (x<pixel_size+1u) ? 0 : line1[x-pixel_size];
-    switch (line2[0]) {
-      case 1: line2[x] += a; break;
-      case 2: line2[x] += b; break;
-      case 3: line2[x] += (a + b) / 2; break;
-      case 4: line2[x] += paeth_predictor(a,b,c); break;
+  if (line2[0]!=0) {
+    for (unsigned int x=1;x<line_len;x++) {
+      int a = (x<pixel_size+1u) ? 0 : line2[x-pixel_size];
+      int b = line1[x];
+      int c = (x<pixel_size+1u) ? 0 : line1[x-pixel_size];
+      switch (line2[0]) {
+        case 1: line2[x] += a; break;
+        case 2: line2[x] += b; break;
+        case 3: line2[x] += (a + b) / 2; break;
+        case 4: line2[x] += paeth_predictor(a,b,c); break;
+      }
     }
   }
+
   line2++;
   row_ptr += starting_col[last_pass] * ((use_bgrx) ? 4 : 3);
   unsigned char alpha = 0xff;
